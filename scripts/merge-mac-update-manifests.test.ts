@@ -14,6 +14,7 @@ files:
   - url: T3-Code-0.0.4-arm64.zip
     sha512: arm64zip
     size: 125621344
+    blockMapSize: 131072
   - url: T3-Code-0.0.4-arm64.dmg
     sha512: arm64dmg
     size: 131754935
@@ -30,6 +31,7 @@ files:
   - url: T3-Code-0.0.4-x64.zip
     sha512: x64zip
     size: 132000112
+    blockMapSize: 140001
   - url: T3-Code-0.0.4-x64.dmg
     sha512: x64dmg
     size: 138148807
@@ -53,10 +55,44 @@ releaseDate: '2026-03-07T10:36:07.540Z'
         "T3-Code-0.0.4-x64.dmg",
       ],
     );
+    assert.equal(merged.files[0]?.blockMapSize, 131072);
+    assert.equal(merged.files[2]?.blockMapSize, 140001);
+    assert.equal(merged.legacyPath, "T3-Code-0.0.4-arm64.zip");
+    assert.equal(merged.legacySha512, "arm64zip");
 
     const serialized = serializeMacUpdateManifest(merged);
-    assert.ok(!serialized.includes("path:"));
+    assert.match(serialized, /^path: T3-Code-0\.0\.4-arm64\.zip$/m);
+    assert.match(serialized, /^sha512: arm64zip$/m);
+    assert.match(serialized, /^ {4}blockMapSize: 131072$/m);
+    assert.match(serialized, /^ {4}blockMapSize: 140001$/m);
     assert.equal((serialized.match(/- url:/g) ?? []).length, 4);
+  });
+
+  it("round-trips realistic electron-builder latest-mac.yml output", () => {
+    const source = `version: 0.0.20
+files:
+  - url: T3-Code-0.0.20-arm64-mac.zip
+    sha512: aaaa
+    size: 125000000
+    blockMapSize: 131000
+  - url: T3-Code-0.0.20-arm64.dmg
+    sha512: bbbb
+    size: 132000000
+path: T3-Code-0.0.20-arm64-mac.zip
+sha512: aaaa
+releaseDate: '2026-04-15T10:36:07.540Z'
+`;
+
+    const manifest = parseMacUpdateManifest(source, "latest-mac.yml");
+    const serialized = serializeMacUpdateManifest(manifest);
+
+    // The serializer must preserve every signal that electron-updater relies
+    // on: file entries with blockMapSize, plus the top-level path+sha512
+    // pointers used by legacy macOS update paths.
+    assert.match(serialized, /^version: 0\.0\.20$/m);
+    assert.match(serialized, /^ {4}blockMapSize: 131000$/m);
+    assert.match(serialized, /^path: T3-Code-0\.0\.20-arm64-mac\.zip$/m);
+    assert.match(serialized, /^sha512: aaaa$/m);
   });
 
   it("rejects mismatched manifest versions", () => {

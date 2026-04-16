@@ -89,6 +89,8 @@ export interface DesktopRuntimeInfo {
   runningUnderArm64Translation: boolean;
 }
 
+export type DesktopUpdateInstallMode = "auto" | "external-download";
+
 export interface DesktopUpdateState {
   enabled: boolean;
   status: DesktopUpdateStatus;
@@ -104,6 +106,18 @@ export interface DesktopUpdateState {
   message: string | null;
   errorContext: "check" | "download" | "install" | null;
   canRetry: boolean;
+  /**
+   * How the update action should complete.
+   *
+   * - `auto` (default): `installUpdate` triggers `autoUpdater.quitAndInstall()`.
+   * - `external-download`: the running app cannot install the update itself
+   *   (for example, a macOS build without a Developer ID signature). The UI
+   *   should treat the "install" affordance as "open the release page" and
+   *   `installUpdate` will open `externalDownloadUrl` in the user's browser.
+   */
+  installMode: DesktopUpdateInstallMode;
+  /** External URL to download the update from when `installMode` is `external-download`. */
+  externalDownloadUrl: string | null;
 }
 
 export interface DesktopUpdateActionResult {

@@ -29,6 +29,8 @@ const baseState: DesktopUpdateState = {
   message: null,
   errorContext: null,
   canRetry: false,
+  installMode: "auto",
+  externalDownloadUrl: null,
 };
 
 describe("desktop update button state", () => {
@@ -212,6 +214,7 @@ describe("desktop update UI helpers", () => {
       getDesktopUpdateInstallConfirmationMessage({
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.1",
+        installMode: "auto",
       }),
     ).toContain("Install update 1.1.1 and restart CornerstoneCode?");
   });
@@ -221,8 +224,19 @@ describe("desktop update UI helpers", () => {
       getDesktopUpdateInstallConfirmationMessage({
         availableVersion: null,
         downloadedVersion: null,
+        installMode: "auto",
       }),
     ).toContain("Install update and restart CornerstoneCode?");
+  });
+
+  it("asks the user to open the release page for external-download builds", () => {
+    const message = getDesktopUpdateInstallConfirmationMessage({
+      availableVersion: "1.1.0",
+      downloadedVersion: null,
+      installMode: "external-download",
+    });
+    expect(message).toContain("Open the release page");
+    expect(message).toContain("1.1.0");
   });
 });
 

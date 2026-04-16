@@ -23,6 +23,8 @@ const baseState: DesktopUpdateState = {
   message: null,
   errorContext: null,
   canRetry: false,
+  installMode: "auto",
+  externalDownloadUrl: null,
 };
 
 describe("shouldBroadcastDownloadProgress", () => {

@@ -26,6 +26,8 @@ export function createInitialDesktopUpdateState(
     message: null,
     errorContext: null,
     canRetry: false,
+    installMode: "auto",
+    externalDownloadUrl: null,
   };
 }
 

@@ -276,6 +276,8 @@ const createDesktopBridgeStub = (overrides?: {
     message: null,
     errorContext: null,
     canRetry: false,
+    installMode: "auto",
+    externalDownloadUrl: null,
   };
 
   return {

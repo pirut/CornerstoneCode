@@ -6,6 +6,8 @@ interface MacUpdateFile {
   readonly url: string;
   readonly sha512: string;
   readonly size: number;
+  readonly blockMapSize?: number;
+  readonly isAdminRightsRequired?: boolean;
 }
 
 type MacUpdateScalar = string | number | boolean;
@@ -15,12 +17,18 @@ interface MacUpdateManifest {
   readonly releaseDate: string;
   readonly files: ReadonlyArray<MacUpdateFile>;
   readonly extras: Readonly<Record<string, MacUpdateScalar>>;
+  /** Legacy top-level `path:` — electron-updater < 6.x falls back to this when arch-matching fails. */
+  readonly legacyPath: string | null;
+  /** Legacy top-level `sha512:` matching `legacyPath`. */
+  readonly legacySha512: string | null;
 }
 
 interface MutableMacUpdateFile {
   url?: string;
   sha512?: string;
   size?: number;
+  blockMapSize?: number;
+  isAdminRightsRequired?: boolean;
 }
 
 function stripSingleQuotes(value: string): string {
@@ -47,11 +55,16 @@ function parseFileRecord(
       `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: incomplete file entry.`,
     );
   }
-  return {
+  const record: MacUpdateFile = {
     url: currentFile.url,
     sha512: currentFile.sha512,
     size: currentFile.size,
+    ...(currentFile.blockMapSize !== undefined ? { blockMapSize: currentFile.blockMapSize } : {}),
+    ...(currentFile.isAdminRightsRequired !== undefined
+      ? { isAdminRightsRequired: currentFile.isAdminRightsRequired }
+      : {}),
   };
+  return record;
 }
 
 function parseScalarValue(rawValue: string): MacUpdateScalar {
@@ -67,48 +80,94 @@ function parseScalarValue(rawValue: string): MacUpdateScalar {
   return value;
 }
 
+const FILE_INDENTED_SCALAR_PATTERN = /^ {4}([A-Za-z][A-Za-z0-9]*):\s*(.+)$/;
+
+function assignFileField(
+  currentFile: MutableMacUpdateFile,
+  key: string,
+  rawValue: string,
+  sourcePath: string,
+  lineNumber: number,
+): void {
+  const value = parseScalarValue(rawValue);
+  switch (key) {
+    case "sha512":
+      if (typeof value !== "string") {
+        throw new Error(
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: sha512 must be a string.`,
+        );
+      }
+      currentFile.sha512 = value;
+      return;
+    case "size":
+      if (typeof value !== "number") {
+        throw new Error(
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: size must be a number.`,
+        );
+      }
+      currentFile.size = value;
+      return;
+    case "blockMapSize":
+      if (typeof value !== "number") {
+        throw new Error(
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: blockMapSize must be a number.`,
+        );
+      }
+      currentFile.blockMapSize = value;
+      return;
+    case "isAdminRightsRequired":
+      if (typeof value !== "boolean") {
+        throw new Error(
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: isAdminRightsRequired must be a boolean.`,
+        );
+      }
+      currentFile.isAdminRightsRequired = value;
+      return;
+    default:
+      // Unknown indented fields inside a file entry are preserved as a no-op
+      // so the parser keeps working as electron-builder adds new metadata.
+      return;
+  }
+}
+
 export function parseMacUpdateManifest(raw: string, sourcePath: string): MacUpdateManifest {
   const lines = raw.split(/\r?\n/);
   const files: MacUpdateFile[] = [];
   const extras: Record<string, MacUpdateScalar> = {};
   let version: string | null = null;
   let releaseDate: string | null = null;
+  let legacyPath: string | null = null;
+  let legacySha512: string | null = null;
   let inFiles = false;
   let currentFile: MutableMacUpdateFile | null = null;
+
+  const flushCurrentFile = (lineNumber: number): void => {
+    const finalized = parseFileRecord(currentFile, sourcePath, lineNumber);
+    if (finalized) files.push(finalized);
+    currentFile = null;
+  };
 
   for (const [index, rawLine] of lines.entries()) {
     const lineNumber = index + 1;
     const line = rawLine.trimEnd();
     if (line.length === 0) continue;
 
-    const fileUrlMatch = line.match(/^  - url:\s*(.+)$/);
+    const fileUrlMatch = line.match(/^ {2}- url:\s*(.+)$/);
     if (fileUrlMatch?.[1]) {
-      const finalized = parseFileRecord(currentFile, sourcePath, lineNumber);
-      if (finalized) files.push(finalized);
+      flushCurrentFile(lineNumber);
       currentFile = { url: stripSingleQuotes(fileUrlMatch[1].trim()) };
       inFiles = true;
       continue;
     }
 
-    const fileShaMatch = line.match(/^    sha512:\s*(.+)$/);
-    if (fileShaMatch?.[1]) {
+    const indentedMatch = line.match(FILE_INDENTED_SCALAR_PATTERN);
+    if (indentedMatch?.[1] && indentedMatch[2] !== undefined) {
       if (currentFile === null) {
         throw new Error(
-          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: sha512 without a file entry.`,
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: '${indentedMatch[1]}' without a file entry.`,
         );
       }
-      currentFile.sha512 = stripSingleQuotes(fileShaMatch[1].trim());
-      continue;
-    }
-
-    const fileSizeMatch = line.match(/^    size:\s*(\d+)$/);
-    if (fileSizeMatch?.[1]) {
-      if (currentFile === null) {
-        throw new Error(
-          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: size without a file entry.`,
-        );
-      }
-      currentFile.size = Number(fileSizeMatch[1]);
+      assignFileField(currentFile, indentedMatch[1], indentedMatch[2], sourcePath, lineNumber);
       continue;
     }
 
@@ -118,9 +177,7 @@ export function parseMacUpdateManifest(raw: string, sourcePath: string): MacUpda
     }
 
     if (inFiles && currentFile !== null) {
-      const finalized = parseFileRecord(currentFile, sourcePath, lineNumber);
-      if (finalized) files.push(finalized);
-      currentFile = null;
+      flushCurrentFile(lineNumber);
     }
     inFiles = false;
 
@@ -154,15 +211,30 @@ export function parseMacUpdateManifest(raw: string, sourcePath: string): MacUpda
       continue;
     }
 
-    if (key === "path" || key === "sha512") {
+    if (key === "path") {
+      if (typeof value !== "string") {
+        throw new Error(
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: path must be a string.`,
+        );
+      }
+      legacyPath = value;
+      continue;
+    }
+
+    if (key === "sha512") {
+      if (typeof value !== "string") {
+        throw new Error(
+          `Invalid macOS update manifest at ${sourcePath}:${lineNumber}: sha512 must be a string.`,
+        );
+      }
+      legacySha512 = value;
       continue;
     }
 
     extras[key] = value;
   }
 
-  const finalized = parseFileRecord(currentFile, sourcePath, lines.length);
-  if (finalized) files.push(finalized);
+  flushCurrentFile(lines.length);
 
   if (!version) {
     throw new Error(`Invalid macOS update manifest at ${sourcePath}: missing version.`);
@@ -179,6 +251,8 @@ export function parseMacUpdateManifest(raw: string, sourcePath: string): MacUpda
     releaseDate,
     files,
     extras,
+    legacyPath,
+    legacySha512,
   };
 }
 
@@ -228,6 +302,11 @@ export function mergeMacUpdateManifests(
       primary.releaseDate >= secondary.releaseDate ? primary.releaseDate : secondary.releaseDate,
     files: [...filesByUrl.values()],
     extras: mergeExtras(primary.extras, secondary.extras),
+    // Keep the primary manifest's legacy pointers. electron-updater prefers
+    // `files[]` over `path:` so the legacy pointer only matters on older
+    // fallback code paths; we just need *a* matching arch to be present.
+    legacyPath: primary.legacyPath ?? secondary.legacyPath,
+    legacySha512: primary.legacySha512 ?? secondary.legacySha512,
   };
 }
 
@@ -249,6 +328,19 @@ export function serializeMacUpdateManifest(manifest: MacUpdateManifest): string 
     lines.push(`  - url: ${file.url}`);
     lines.push(`    sha512: ${file.sha512}`);
     lines.push(`    size: ${file.size}`);
+    if (file.blockMapSize !== undefined) {
+      lines.push(`    blockMapSize: ${file.blockMapSize}`);
+    }
+    if (file.isAdminRightsRequired !== undefined) {
+      lines.push(`    isAdminRightsRequired: ${file.isAdminRightsRequired}`);
+    }
+  }
+
+  if (manifest.legacyPath) {
+    lines.push(`path: ${manifest.legacyPath}`);
+  }
+  if (manifest.legacySha512) {
+    lines.push(`sha512: ${manifest.legacySha512}`);
   }
 
   for (const key of Object.keys(manifest.extras).toSorted()) {
