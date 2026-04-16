@@ -7,12 +7,12 @@ const APP_BASE_NAME = "CornerstoneCode";
 export function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
-}): DesktopAppStageLabel {
+}): DesktopAppStageLabel | null {
   if (input.isDevelopment) {
     return "Dev";
   }
 
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
+  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : null;
 }
 
 export function resolveDesktopAppBranding(input: {
@@ -23,6 +23,6 @@ export function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: stageLabel === null ? APP_BASE_NAME : `${APP_BASE_NAME} (${stageLabel})`,
   };
 }

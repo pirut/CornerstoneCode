@@ -75,11 +75,15 @@ export type DesktopUpdateStatus =
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 export type DesktopUpdateChannel = "latest" | "nightly";
-export type DesktopAppStageLabel = "Alpha" | "Dev" | "Nightly";
+export type DesktopAppStageLabel = "Dev" | "Nightly";
 
 export interface DesktopAppBranding {
   baseName: string;
-  stageLabel: DesktopAppStageLabel;
+  /**
+   * Stage label for non-stable builds (`Dev`, `Nightly`). `null` for stable
+   * releases — stable builds have no parenthetical suffix on the base name.
+   */
+  stageLabel: DesktopAppStageLabel | null;
   displayName: string;
 }
 

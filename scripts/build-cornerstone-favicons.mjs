@@ -10,6 +10,11 @@
 // The small-icon cutoff is 128 px. Below that, we fall back to the plain icon
 // because "CODE" becomes unreadable at favicon sizes (16, 32, 48).
 //
+// 1024 px desktop icons are rendered onto an Apple-style squircle plate with
+// transparent padding outside the shape. macOS does not mask app icons, so a
+// full-bleed rectangle would look sharp-cornered among the dock's squircle
+// icons. See `buildSquircleIconSvg` / `renderPng` for the composition.
+//
 // Outputs:
 //   apps/web/public/{favicon-16x16,favicon-32x32,apple-touch-icon}.png, favicon.ico
 //   assets/{dev,nightly,prod}/cornerstone-web-* + cornerstone-*-1024.png + cornerstone-*.ico
@@ -41,9 +46,9 @@ const codemarkSvg = await readFile(resolve(publicDir, "cornerstone-codemark-dark
 
 const COMPOSITE_MIN_SIZE = 128;
 
-// Cornerstone Gunmetal — used as the opaque plate behind desktop app icons so
+// Cornerstone Gunmetal — used as the plate colour behind desktop app icons so
 // the white codemark glyphs remain legible against macOS' translucent dock.
-const CORNERSTONE_GUNMETAL = { r: 0x34, g: 0x3d, b: 0x42, alpha: 1 };
+const CORNERSTONE_GUNMETAL_HEX = "#343d42";
 
 /**
  * Render one of the two SVG sources to a PNG at `size × size`.
@@ -53,14 +58,58 @@ const CORNERSTONE_GUNMETAL = { r: 0x34, g: 0x3d, b: 0x42, alpha: 1 };
  */
 const SVG_VIEWBOX = 1080;
 
+// Apple-style icon grid for the 1024×1024 canvas:
+//   - Icon shape is 824×824 centered (100px inset on every side). macOS does
+//     NOT mask app icons — if we ship a full-bleed rectangle it looks like a
+//     sharp-cornered slab among the dock's squircle icons. Rendering onto a
+//     rounded-rectangle plate with transparent padding produces an icon that
+//     sits cleanly in the dock.
+//   - Corner radius 180 (~22% of the shape size) closely approximates the
+//     Apple squircle used by first-party icons.
+const PLATE_CANVAS_SIZE = 1024;
+const PLATE_INSET = 100;
+const PLATE_SHAPE_SIZE = PLATE_CANVAS_SIZE - PLATE_INSET * 2; // 824
+const PLATE_CORNER_RADIUS = 180;
+
+/**
+ * Build a composite SVG that draws the codemark centered on a squircle-shaped
+ * Cornerstone Gunmetal plate with transparent padding outside the shape. The
+ * result is designed to be rasterized at 1024×1024 as the desktop/dock icon.
+ */
+function buildSquircleIconSvg() {
+  const inner = codemarkSvg
+    .toString("utf8")
+    .replace(/^<\?xml[^?]*\?>\s*/, "")
+    .replace(/^<svg[^>]*>/, "")
+    .replace(/<\/svg>\s*$/, "");
+  const scale = PLATE_SHAPE_SIZE / SVG_VIEWBOX;
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${PLATE_CANVAS_SIZE}" height="${PLATE_CANVAS_SIZE}" viewBox="0 0 ${PLATE_CANVAS_SIZE} ${PLATE_CANVAS_SIZE}">` +
+      `<rect x="${PLATE_INSET}" y="${PLATE_INSET}" width="${PLATE_SHAPE_SIZE}" height="${PLATE_SHAPE_SIZE}" rx="${PLATE_CORNER_RADIUS}" ry="${PLATE_CORNER_RADIUS}" fill="${CORNERSTONE_GUNMETAL_HEX}"/>` +
+      `<g transform="translate(${PLATE_INSET}, ${PLATE_INSET}) scale(${scale})">${inner}</g>` +
+      `</svg>`,
+  );
+}
+
+const squircleIconSvg = buildSquircleIconSvg();
+
 async function renderPng(size, options = {}) {
   const { opaqueBackground = false } = options;
+
+  // When an opaque plate is requested, render the composite squircle SVG so
+  // the icon has transparent pixels outside an Apple-style rounded shape.
+  if (opaqueBackground) {
+    const density = Math.max(72, Math.ceil((size * 144) / PLATE_CANVAS_SIZE));
+    return sharp(squircleIconSvg, { density })
+      .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+  }
+
   const source = size >= COMPOSITE_MIN_SIZE ? codemarkSvg : plainIconSvg;
   const density = Math.max(72, Math.ceil((size * 144) / SVG_VIEWBOX));
-  const background = opaqueBackground ? CORNERSTONE_GUNMETAL : { r: 0, g: 0, b: 0, alpha: 0 };
   return sharp(source, { density })
-    .resize(size, size, { fit: "contain", background })
-    .flatten(opaqueBackground ? { background: CORNERSTONE_GUNMETAL } : false)
+    .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png({ compressionLevel: 9 })
     .toBuffer();
 }
@@ -69,11 +118,12 @@ async function writePng(size, absolutePath, options = {}) {
   const buffer = await renderPng(size, options);
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, buffer);
-  const which = size >= COMPOSITE_MIN_SIZE ? "codemark" : "icon";
-  const bg = options.opaqueBackground ? ", gunmetal bg" : "";
-  console.log(
-    `✓ wrote ${absolutePath.replace(repoRoot + "/", "")} (${size}x${size}, ${which}${bg})`,
-  );
+  const which = options.opaqueBackground
+    ? "codemark on squircle"
+    : size >= COMPOSITE_MIN_SIZE
+      ? "codemark"
+      : "icon";
+  console.log(`✓ wrote ${absolutePath.replace(repoRoot + "/", "")} (${size}x${size}, ${which})`);
 }
 
 async function writeIco(sizes, absolutePath) {

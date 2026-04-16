@@ -21,18 +21,18 @@ describe("resolveDesktopAppStageLabel", () => {
     ).toBe("Nightly");
   });
 
-  it("uses Alpha for packaged stable builds", () => {
+  it("returns null stage for packaged stable builds", () => {
     expect(
       resolveDesktopAppStageLabel({
         isDevelopment: false,
         appVersion: "0.0.17",
       }),
-    ).toBe("Alpha");
+    ).toBeNull();
   });
 });
 
 describe("resolveDesktopAppBranding", () => {
-  it("returns a complete desktop branding payload", () => {
+  it("returns a complete desktop branding payload for nightly", () => {
     expect(
       resolveDesktopAppBranding({
         isDevelopment: false,
@@ -42,6 +42,19 @@ describe("resolveDesktopAppBranding", () => {
       baseName: "CornerstoneCode",
       stageLabel: "Nightly",
       displayName: "CornerstoneCode (Nightly)",
+    });
+  });
+
+  it("omits the stage suffix from displayName for stable builds", () => {
+    expect(
+      resolveDesktopAppBranding({
+        isDevelopment: false,
+        appVersion: "0.0.17",
+      }),
+    ).toEqual({
+      baseName: "CornerstoneCode",
+      stageLabel: null,
+      displayName: "CornerstoneCode",
     });
   });
 });

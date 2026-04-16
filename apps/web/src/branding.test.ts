@@ -34,4 +34,25 @@ describe("branding", () => {
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
     expect(branding.APP_DISPLAY_NAME).toBe("CornerstoneCode (Nightly)");
   });
+
+  it("uses a null stage label and unsuffixed display name for stable injected branding", async () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        desktopBridge: {
+          getAppBranding: () => ({
+            baseName: "CornerstoneCode",
+            stageLabel: null,
+            displayName: "CornerstoneCode",
+          }),
+        },
+      },
+    });
+
+    const branding = await import("./branding");
+
+    expect(branding.APP_BASE_NAME).toBe("CornerstoneCode");
+    expect(branding.APP_STAGE_LABEL).toBeNull();
+    expect(branding.APP_DISPLAY_NAME).toBe("CornerstoneCode");
+  });
 });
