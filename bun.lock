@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "name": "@t3tools/desktop",
-      "version": "0.0.21",
+      "version": "0.0.22",
       "dependencies": {
         "effect": "catalog:",
         "electron": "40.6.0",
