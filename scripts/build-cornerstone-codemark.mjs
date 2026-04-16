@@ -4,7 +4,7 @@
 // Inputs:
 //   cornerstoneLogos/Cornerstone Logo - Icon Blk.svg  (icon master — unused at runtime;
 //     we embed the polygons inline here so the output SVG is self-contained)
-//   cornerstoneLogos/fonts/CormorantGaramond.ttf       (OFL variable serif)
+//   cornerstoneLogos/fonts/WorkSans-Bold.ttf           (OFL sans serif)
 //
 // Outputs:
 //   cornerstoneLogos/Cornerstone Codemark.svg        — master, black glyphs + gold corner
@@ -23,7 +23,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "..");
 
-const fontPath = resolve(repoRoot, "cornerstoneLogos/fonts/CormorantGaramond.ttf");
+const fontPath = resolve(repoRoot, "cornerstoneLogos/fonts/WorkSans-Bold.ttf");
 
 const fontBuffer = await readFile(fontPath);
 // opentype.parse() takes an ArrayBuffer.
@@ -39,9 +39,9 @@ const ICON_BOUNDS = { x1: 149.46, y1: 147.82, x2: 930.54, y2: 929.38 };
 const ICON_W = ICON_BOUNDS.x2 - ICON_BOUNDS.x1;
 const ICON_H = ICON_BOUNDS.y2 - ICON_BOUNDS.y1;
 
-// Reserve bottom ~33% for "CODE" text.
-const ICON_TOP_PAD = 60;
-const ICON_TARGET_H = 620;
+// Reserve bottom space for a compact "CODE" lockup that reads well in a dock icon.
+const ICON_TOP_PAD = 84;
+const ICON_TARGET_H = 560;
 const ICON_SCALE = ICON_TARGET_H / ICON_H;
 const ICON_TARGET_W = ICON_W * ICON_SCALE;
 const ICON_LEFT = (CANVAS - ICON_TARGET_W) / 2;
@@ -53,11 +53,10 @@ const iconTy = ICON_TOP_PAD - ICON_SCALE * ICON_BOUNDS.y1;
 
 // ---------- "CODE" text outline ----------
 const TEXT = "CODE";
-// Cap height of Cormorant Garamond ≈ 0.69 × fontSize (units-per-em derived).
-// We want cap height around 220px to sit comfortably in the bottom zone.
-const FONT_SIZE = 320;
-// Slight tracking (letter-spacing) suits all-caps serif display.
-const LETTER_SPACING_EM = 0.06;
+// Work Sans Bold is much denser than the previous serif, so keep the wordmark
+// smaller and tighter to avoid overwhelming the icon in the macOS dock.
+const FONT_SIZE = 252;
+const LETTER_SPACING_EM = 0.035;
 
 const textPath = buildTrackedTextPath(font, TEXT, FONT_SIZE, LETTER_SPACING_EM);
 const textBbox = textPath.getBoundingBox();
@@ -65,8 +64,8 @@ const textW = textBbox.x2 - textBbox.x1;
 const textH = textBbox.y2 - textBbox.y1;
 
 // Bottom text zone: y from (ICON_TOP_PAD + ICON_TARGET_H + GAP) to (CANVAS - BOTTOM_PAD)
-const TEXT_ZONE_TOP = ICON_TOP_PAD + ICON_TARGET_H + 60;
-const TEXT_ZONE_BOTTOM = CANVAS - 80;
+const TEXT_ZONE_TOP = ICON_TOP_PAD + ICON_TARGET_H + 56;
+const TEXT_ZONE_BOTTOM = CANVAS - 112;
 const TEXT_ZONE_H = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
 
 const textOffsetX = (CANVAS - textW) / 2 - textBbox.x1;
