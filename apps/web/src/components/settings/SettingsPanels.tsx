@@ -296,7 +296,11 @@ function AboutVersionSection() {
     if (action === "install") {
       const confirmed = window.confirm(
         getDesktopUpdateInstallConfirmationMessage(
-          updateState ?? { availableVersion: null, downloadedVersion: null },
+          updateState ?? {
+            availableVersion: null,
+            downloadedVersion: null,
+            installMode: "auto",
+          },
         ),
       );
       if (!confirmed) return;
@@ -345,7 +349,9 @@ function AboutVersionSection() {
       ? !canCheckForUpdate(updateState)
       : isDesktopUpdateButtonDisabled(updateState);
 
-  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
+  const installLabel =
+    updateState?.installMode === "external-download" ? "Open Download" : "Install";
+  const actionLabel: Record<string, string> = { download: "Download", install: installLabel };
   const statusLabel: Record<string, string> = {
     checking: "Checking…",
     downloading: "Downloading…",
@@ -353,9 +359,14 @@ function AboutVersionSection() {
   };
   const buttonLabel =
     actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
+  const externalInstall =
+    updateState?.installMode === "external-download" &&
+    (action === "download" || action === "install");
   const description =
     action === "download" || action === "install"
-      ? "Update available."
+      ? externalInstall
+        ? "Update available. This build installs updates from the release page."
+        : "Update available."
       : "Current version of the application.";
 
   return (
@@ -381,36 +392,22 @@ function AboutVersionSection() {
           </Tooltip>
         }
       />
-      <SettingsRow
-        title="Update track"
-        description="Stable follows full releases. Nightly follows the nightly desktop channel and can switch back to stable immediately."
-        control={
-          <Select
-            value={selectedUpdateChannel}
-            onValueChange={(value) => {
-              handleUpdateChannelChange(value as DesktopUpdateChannel);
-            }}
-          >
-            <SelectTrigger
-              className="w-full sm:w-40"
-              aria-label="Update track"
+      {selectedUpdateChannel === "nightly" ? (
+        <SettingsRow
+          title="Update track"
+          description="Running nightly builds. Switch back to stable at any time."
+          control={
+            <Button
+              size="xs"
+              variant="outline"
               disabled={!hasDesktopBridge || isChangingUpdateChannel}
+              onClick={() => handleUpdateChannelChange("latest")}
             >
-              <SelectValue>
-                {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem hideIndicator value="latest">
-                Stable
-              </SelectItem>
-              <SelectItem hideIndicator value="nightly">
-                Nightly
-              </SelectItem>
-            </SelectPopup>
-          </Select>
-        }
-      />
+              Switch to Stable
+            </Button>
+          }
+        />
+      ) : null}
     </>
   );
 }

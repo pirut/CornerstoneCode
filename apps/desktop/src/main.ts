@@ -54,9 +54,14 @@ import {
   writeSavedEnvironmentSecret,
 } from "./clientPersistence";
 import { isBackendReadinessAborted, waitForHttpReady } from "./backendReadiness";
+import {
+  requiresExternalInstall,
+  resolveMacCodeSignatureStatus,
+  type MacCodeSignatureStatus,
+} from "./codeSignatureStatus";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { resolveDesktopServerExposure } from "./serverExposure";
-import { syncShellEnvironment } from "./syncShellEnvironment";
+import { syncShellEnvironmentAsync } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
 import { doesVersionMatchDesktopUpdateChannel } from "./updateChannels";
 import { ServerListeningDetector } from "./serverListeningDetector";
@@ -74,8 +79,6 @@ import {
 } from "./updateMachine";
 import { isArm64HostRunningIntelBuild, resolveDesktopRuntimeInfo } from "./runtimeArch";
 import { resolveDesktopAppBranding } from "./appBranding";
-
-syncShellEnvironment();
 
 const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 const CONFIRM_CHANNEL = "desktop:confirm";
@@ -478,20 +481,63 @@ async function waitForBackendWindowReady(baseUrl: string): Promise<"listening" |
   });
 }
 
+function buildSplashDataUrl(): string {
+  const isDark = nativeTheme.shouldUseDarkColors;
+  const backgroundColor = isDark ? "#0a0a0a" : "#ffffff";
+  const foregroundColor = isDark ? "#e5e7eb" : "#1f2937";
+  const accentColor = isDark ? "#9ca3af" : "#4b5563";
+  const displayName = APP_DISPLAY_NAME;
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>${displayName}</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: ${backgroundColor}; color: ${foregroundColor}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; -webkit-user-select: none; user-select: none; }
+  .wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; }
+  .app-name { font-size: 14px; font-weight: 500; color: ${foregroundColor}; letter-spacing: 0.02em; }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: ${accentColor}; opacity: 0.35; animation: pulse 1.2s ease-in-out infinite; }
+  .dot:nth-child(2) { animation-delay: 0.18s; }
+  .dot:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="app-name">${displayName}</div>
+  <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+</div>
+</body>
+</html>`;
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
 function ensureInitialBackendWindowOpen(): void {
   const existingWindow = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? null;
   if (isDevelopment || existingWindow !== null || backendInitialWindowOpenInFlight !== null) {
     return;
   }
 
+  // Create the main window immediately with a splash page so the user sees
+  // the app within <500ms of launch, then swap to the backend URL once the
+  // HTTP server is listening. This decouples cold-start window latency from
+  // backend boot time (which can be 800-1500ms in packaged builds).
+  const splashUrl = buildSplashDataUrl();
+  mainWindow = createWindow({ initialUrl: splashUrl });
+  writeDesktopLogHeader("bootstrap splash window created");
+
+  const window = mainWindow;
   const nextOpen = waitForBackendWindowReady(backendHttpUrl)
     .then((source) => {
       writeDesktopLogHeader(`bootstrap backend ready source=${source}`);
-      if (mainWindow ?? BrowserWindow.getAllWindows()[0]) {
+      if (window.isDestroyed()) {
         return;
       }
-      mainWindow = createWindow();
-      writeDesktopLogHeader("bootstrap main window created");
+      void window.loadURL(backendHttpUrl);
+      writeDesktopLogHeader("bootstrap main window loaded backend url");
     })
     .catch((error) => {
       if (isBackendReadinessAborted(error)) {
@@ -899,23 +945,62 @@ function handleCheckForUpdatesMenuClick(): void {
 
 async function checkForUpdatesFromMenu(): Promise<void> {
   await checkForUpdates("menu");
+  // electron-updater fires `checking-for-update` and then either
+  // `update-available`, `update-not-available`, or `error` asynchronously
+  // relative to `checkForUpdates()` resolving. Wait briefly for the terminal
+  // state so the dialog reflects what actually happened.
+  const terminalState = await waitForTerminalUpdateState(3_000);
 
-  if (updateState.status === "up-to-date") {
+  if (terminalState.status === "up-to-date") {
     void dialog.showMessageBox({
       type: "info",
       title: "You're up to date!",
-      message: `CornerstoneCode ${updateState.currentVersion} is currently the newest version available.`,
+      message: `${APP_DISPLAY_NAME} ${terminalState.currentVersion} is currently the newest version available.`,
       buttons: ["OK"],
     });
-  } else if (updateState.status === "error") {
+  } else if (terminalState.status === "available") {
+    const hint =
+      terminalState.installMode === "external-download"
+        ? "Open the release page to download the new version."
+        : "Start the download from Settings → Updates to install it.";
+    void dialog.showMessageBox({
+      type: "info",
+      title: "Update available",
+      message: `${APP_DISPLAY_NAME} ${terminalState.availableVersion ?? "latest"} is available.`,
+      detail: hint,
+      buttons: ["OK"],
+    });
+  } else if (terminalState.status === "error") {
     void dialog.showMessageBox({
       type: "warning",
       title: "Update check failed",
       message: "Could not check for updates.",
-      detail: updateState.message ?? "An unknown error occurred. Please try again later.",
+      detail: terminalState.message ?? "An unknown error occurred. Please try again later.",
       buttons: ["OK"],
     });
   }
+}
+
+async function waitForTerminalUpdateState(timeoutMs: number): Promise<DesktopUpdateState> {
+  const terminalStatuses = new Set<DesktopUpdateState["status"]>([
+    "up-to-date",
+    "available",
+    "downloaded",
+    "error",
+    "disabled",
+  ]);
+  if (terminalStatuses.has(updateState.status) && !updateCheckInFlight) {
+    return updateState;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!updateCheckInFlight && terminalStatuses.has(updateState.status)) {
+      return updateState;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return updateState;
 }
 
 function configureApplicationMenu(): void {
@@ -1129,11 +1214,41 @@ function createBaseUpdateState(
   channel: DesktopUpdateChannel,
   enabled: boolean,
 ): DesktopUpdateState {
+  const installMode: DesktopUpdateState["installMode"] = macExternalInstallRequired
+    ? "external-download"
+    : "auto";
   return {
     ...createInitialDesktopUpdateState(app.getVersion(), desktopRuntimeInfo, channel),
     enabled,
     status: enabled ? "idle" : "disabled",
+    installMode,
+    externalDownloadUrl: installMode === "external-download" ? resolveReleasesPageUrl() : null,
   };
+}
+
+let cachedMacCodeSignatureStatus: MacCodeSignatureStatus | null = null;
+let macExternalInstallRequired = false;
+
+function getMacCodeSignatureStatus(): MacCodeSignatureStatus {
+  if (cachedMacCodeSignatureStatus !== null) {
+    return cachedMacCodeSignatureStatus;
+  }
+  cachedMacCodeSignatureStatus = resolveMacCodeSignatureStatus({
+    appPath: app.getAppPath().replace(/\/Contents\/Resources\/app(?:\.asar)?$/, ""),
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+  });
+  macExternalInstallRequired = requiresExternalInstall(cachedMacCodeSignatureStatus);
+  return cachedMacCodeSignatureStatus;
+}
+
+function resolveReleasesPageUrl(): string | null {
+  const rawRepo = process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim() || "";
+  const appUpdateYml = readAppUpdateYml();
+  const owner = appUpdateYml?.owner ?? rawRepo.split("/")[0] ?? "";
+  const repo = appUpdateYml?.repo ?? rawRepo.split("/")[1] ?? "";
+  if (!owner || !repo) return null;
+  return `https://github.com/${owner}/${repo}/releases/latest`;
 }
 
 function applyAutoUpdaterChannel(channel: DesktopUpdateChannel): void {
@@ -1191,9 +1306,20 @@ async function downloadAvailableUpdate(): Promise<{ accepted: boolean; completed
   if (!updaterConfigured || updateDownloadInFlight || updateState.status !== "available") {
     return { accepted: false, completed: false };
   }
+  if (updateState.installMode === "external-download") {
+    // The running build cannot install updates on its own (e.g. unsigned
+    // macOS). Skip the download; the install action will open the release
+    // page so the user can install the new version manually.
+    setUpdateState(
+      reduceDesktopUpdateStateOnDownloadComplete(
+        updateState,
+        updateState.availableVersion ?? updateState.currentVersion,
+      ),
+    );
+    return { accepted: true, completed: true };
+  }
   updateDownloadInFlight = true;
   setUpdateState(reduceDesktopUpdateStateOnDownloadStart(updateState));
-  autoUpdater.disableDifferentialDownload = isArm64HostRunningIntelBuild(desktopRuntimeInfo);
   console.info("[desktop-updater] Downloading update...");
 
   try {
@@ -1212,6 +1338,21 @@ async function downloadAvailableUpdate(): Promise<{ accepted: boolean; completed
 async function installDownloadedUpdate(): Promise<{ accepted: boolean; completed: boolean }> {
   if (isQuitting || !updaterConfigured || updateState.status !== "downloaded") {
     return { accepted: false, completed: false };
+  }
+
+  if (updateState.installMode === "external-download" && updateState.externalDownloadUrl) {
+    try {
+      await shell.openExternal(updateState.externalDownloadUrl);
+      console.info(
+        `[desktop-updater] Opened external download page at ${updateState.externalDownloadUrl}.`,
+      );
+      return { accepted: true, completed: true };
+    } catch (error: unknown) {
+      const message = formatErrorMessage(error);
+      setUpdateState(reduceDesktopUpdateStateOnInstallFailure(updateState, message));
+      console.error(`[desktop-updater] Failed to open external download: ${message}`);
+      return { accepted: true, completed: false };
+    }
   }
 
   isQuitting = true;
@@ -1263,6 +1404,10 @@ function configureAutoUpdater(): void {
     });
   }
 
+  // Probe the macOS code-signature status before composing the initial state
+  // so the renderer gets the right installMode on its first read.
+  getMacCodeSignatureStatus();
+
   const enabled = shouldEnableAutoUpdates();
   setUpdateState(createBaseUpdateState(desktopSettings.updateChannel, enabled));
   if (!enabled) {
@@ -1273,12 +1418,22 @@ function configureAutoUpdater(): void {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   applyAutoUpdaterChannel(desktopSettings.updateChannel);
+  // Delta downloads via the blockmap are the primary reason updates should
+  // feel fast. Only disable them in the one narrow case where the installed
+  // build's arch does not match the host (delta math assumes the current
+  // binary matches what the blockmap was generated against).
   autoUpdater.disableDifferentialDownload = isArm64HostRunningIntelBuild(desktopRuntimeInfo);
   let lastLoggedDownloadMilestone = -1;
 
   if (isArm64HostRunningIntelBuild(desktopRuntimeInfo)) {
     console.info(
       "[desktop-updater] Apple Silicon host detected while running Intel build; updates will switch to arm64 packages.",
+    );
+  }
+
+  if (macExternalInstallRequired) {
+    console.info(
+      "[desktop-updater] macOS build is unsigned or ad-hoc signed; auto-install via Squirrel.Mac will be skipped in favor of opening the release page.",
     );
   }
 
@@ -1295,12 +1450,19 @@ function configureAutoUpdater(): void {
       return;
     }
 
+    const nextState = reduceDesktopUpdateStateOnUpdateAvailable(
+      updateState,
+      info.version,
+      new Date().toISOString(),
+    );
     setUpdateState(
-      reduceDesktopUpdateStateOnUpdateAvailable(
-        updateState,
-        info.version,
-        new Date().toISOString(),
-      ),
+      macExternalInstallRequired
+        ? {
+            ...nextState,
+            installMode: "external-download",
+            externalDownloadUrl: resolveReleasesPageUrl(),
+          }
+        : nextState,
     );
     lastLoggedDownloadMilestone = -1;
     console.info(`[desktop-updater] Update available: ${info.version}`);
@@ -1923,7 +2085,7 @@ function syncAllWindowAppearance(): void {
 
 nativeTheme.on("updated", syncAllWindowAppearance);
 
-function createWindow(): BrowserWindow {
+function createWindow(options?: { readonly initialUrl?: string }): BrowserWindow {
   const window = new BrowserWindow({
     width: 1100,
     height: 780,
@@ -2015,7 +2177,12 @@ function createWindow(): BrowserWindow {
 
   window.once("ready-to-show", revealInitialWindow);
 
-  if (isDevelopment) {
+  if (options?.initialUrl) {
+    void window.loadURL(options.initialUrl);
+    if (isDevelopment) {
+      window.webContents.openDevTools({ mode: "detach" });
+    }
+  } else if (isDevelopment) {
     void window.loadURL(resolveDesktopDevServerUrl());
     window.webContents.openDevTools({ mode: "detach" });
   } else {
@@ -2082,6 +2249,13 @@ async function bootstrap(): Promise<void> {
 
   registerIpcHandlers();
   writeDesktopLogHeader("bootstrap ipc handlers registered");
+  // Sync shell env from the user's login shell before spawning the backend:
+  // the backend needs PATH/SSH_AUTH_SOCK/HOMEBREW_* to discover codex and
+  // other CLI tools the user expects. Doing this asynchronously here instead
+  // of synchronously at module top level unblocks window creation by ~2-6s
+  // on a typical macOS zsh with rc hooks (oh-my-zsh, nvm, mise, etc.).
+  await syncShellEnvironmentAsync();
+  writeDesktopLogHeader("bootstrap shell environment synced");
   startBackend();
   writeDesktopLogHeader("bootstrap backend start requested");
 

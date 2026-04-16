@@ -1,15 +1,22 @@
 import * as OS from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 const PATH_CAPTURE_START = "__T3CODE_PATH_START__";
 const PATH_CAPTURE_END = "__T3CODE_PATH_END__";
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
+const SHELL_ENV_READ_TIMEOUT_MS = 2500;
 
 type ExecFileSyncLike = (
   file: string,
   args: ReadonlyArray<string>,
   options: { encoding: "utf8"; timeout: number },
 ) => string;
+
+type ExecFileAsyncLike = (
+  file: string,
+  args: ReadonlyArray<string>,
+  options: { encoding: "utf8"; timeout: number },
+) => Promise<string>;
 
 function trimNonEmpty(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -165,9 +172,55 @@ export const readEnvironmentFromLoginShell: ShellEnvironmentReader = (
 
   const output = execFile(shell, ["-ilc", buildEnvironmentCaptureCommand(names)], {
     encoding: "utf8",
-    timeout: 5000,
+    timeout: SHELL_ENV_READ_TIMEOUT_MS,
   });
 
+  return extractNamedValues(output, names);
+};
+
+export type AsyncShellEnvironmentReader = (
+  shell: string,
+  names: ReadonlyArray<string>,
+  execFile?: ExecFileAsyncLike,
+) => Promise<Partial<Record<string, string>>>;
+
+const defaultExecFileAsync: ExecFileAsyncLike = (file, args, options) =>
+  new Promise<string>((resolve, reject) => {
+    execFile(
+      file,
+      [...args],
+      { encoding: options.encoding, timeout: options.timeout },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout);
+      },
+    );
+  });
+
+export const readEnvironmentFromLoginShellAsync: AsyncShellEnvironmentReader = async (
+  shell,
+  names,
+  execFile = defaultExecFileAsync,
+) => {
+  if (names.length === 0) {
+    return {};
+  }
+
+  const output = await execFile(shell, ["-ilc", buildEnvironmentCaptureCommand(names)], {
+    encoding: "utf8",
+    timeout: SHELL_ENV_READ_TIMEOUT_MS,
+  });
+
+  return extractNamedValues(output, names);
+};
+
+function extractNamedValues(
+  output: string,
+  names: ReadonlyArray<string>,
+): Partial<Record<string, string>> {
   const environment: Partial<Record<string, string>> = {};
   for (const name of names) {
     const value = extractEnvironmentValue(output, name);
@@ -175,6 +228,5 @@ export const readEnvironmentFromLoginShell: ShellEnvironmentReader = (
       environment[name] = value;
     }
   }
-
   return environment;
-};
+}

@@ -54,6 +54,9 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   if (state.status === "available") {
+    if (state.installMode === "external-download") {
+      return `Update ${state.availableVersion ?? "available"} — open the release page to download`;
+    }
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
   if (state.status === "downloading") {
@@ -62,6 +65,9 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
     return `Downloading update${progress}`;
   }
   if (state.status === "downloaded") {
+    if (state.installMode === "external-download") {
+      return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} ready. Click to open the release page.`;
+    }
     return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
   }
   if (state.status === "error") {
@@ -77,9 +83,12 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
 }
 
 export function getDesktopUpdateInstallConfirmationMessage(
-  state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
+  state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion" | "installMode">,
 ): string {
   const version = state.downloadedVersion ?? state.availableVersion;
+  if (state.installMode === "external-download") {
+    return `Open the release page to download${version ? ` ${version}` : " the update"}?\n\nThis build can't install updates automatically. The release page will open in your browser.`;
+  }
   return `Install update${version ? ` ${version}` : ""} and restart CornerstoneCode?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`;
 }
 
