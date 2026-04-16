@@ -289,8 +289,12 @@ function maxClaudeContextWindowFromModelUsage(
   return maxContextWindow;
 }
 
+// Accepts the full per-message `NonNullableUsage` as well as the slimmer usage
+// shape emitted on `task_progress` / `task_notification` (only `total_tokens`,
+// `tool_uses`, `duration_ms`). The body is already defensive — missing input /
+// output / cache fields resolve to 0 — so it's safe to widen the input type.
 function normalizeClaudeTokenUsage(
-  value: NonNullableUsage | undefined,
+  value: NonNullableUsage | { readonly total_tokens: number } | undefined,
   contextWindow?: number,
 ): ThreadTokenUsageSnapshot | undefined {
   if (!value || typeof value !== "object") {

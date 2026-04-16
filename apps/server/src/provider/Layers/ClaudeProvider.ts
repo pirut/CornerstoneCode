@@ -46,10 +46,14 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     name: "Claude Opus 4.7",
     isCustom: false,
     capabilities: {
+      // Opus 4.7 adds the `xhigh` effort tier — Anthropic recommends it as the
+      // starting point for coding and agentic workloads, which is exactly this
+      // product's use case, so it's the default here.
       reasoningEffortLevels: [
         { value: "low", label: "Low" },
         { value: "medium", label: "Medium" },
-        { value: "high", label: "High", isDefault: true },
+        { value: "high", label: "High" },
+        { value: "xhigh", label: "Extra high", isDefault: true },
         { value: "max", label: "Max" },
         { value: "ultrathink", label: "Ultrathink" },
       ],
