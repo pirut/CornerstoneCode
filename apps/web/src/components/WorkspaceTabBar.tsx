@@ -167,7 +167,7 @@ function WorkspaceTabView(props: WorkspaceTabViewProps) {
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group flex min-w-[96px] max-w-[240px] shrink-0 cursor-pointer items-center gap-1 border-r border-border px-2 py-1 text-xs select-none",
+        "group flex min-w-[96px] max-w-[240px] shrink-0 cursor-pointer items-center gap-1 border-r border-border px-2 py-1 text-xs select-none [-webkit-app-region:no-drag]",
         isActive
           ? "bg-background text-foreground"
           : "bg-card/40 text-muted-foreground hover:bg-card/60 hover:text-foreground",
@@ -301,7 +301,7 @@ export function WorkspaceTabBar() {
   }, [activeTab, splitFocusedPane]);
 
   return (
-    <div className="flex h-9 w-full shrink-0 items-stretch border-b border-border bg-card/20 text-foreground">
+    <div className="drag-region flex h-9 w-full shrink-0 items-stretch border-b border-border bg-card/20 text-foreground">
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
         <DndContext
           sensors={sensors}

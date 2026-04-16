@@ -41,6 +41,10 @@ const codemarkSvg = await readFile(resolve(publicDir, "cornerstone-codemark-dark
 
 const COMPOSITE_MIN_SIZE = 128;
 
+// Cornerstone Gunmetal — used as the opaque plate behind desktop app icons so
+// the white codemark glyphs remain legible against macOS' translucent dock.
+const CORNERSTONE_GUNMETAL = { r: 0x34, g: 0x3d, b: 0x42, alpha: 1 };
+
 /**
  * Render one of the two SVG sources to a PNG at `size × size`.
  * The SVG viewBox is 1080×1080; sharp rasterizes at (density / 72) × viewBox px,
@@ -49,21 +53,27 @@ const COMPOSITE_MIN_SIZE = 128;
  */
 const SVG_VIEWBOX = 1080;
 
-async function renderPng(size) {
+async function renderPng(size, options = {}) {
+  const { opaqueBackground = false } = options;
   const source = size >= COMPOSITE_MIN_SIZE ? codemarkSvg : plainIconSvg;
   const density = Math.max(72, Math.ceil((size * 144) / SVG_VIEWBOX));
+  const background = opaqueBackground ? CORNERSTONE_GUNMETAL : { r: 0, g: 0, b: 0, alpha: 0 };
   return sharp(source, { density })
-    .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(size, size, { fit: "contain", background })
+    .flatten(opaqueBackground ? { background: CORNERSTONE_GUNMETAL } : false)
     .png({ compressionLevel: 9 })
     .toBuffer();
 }
 
-async function writePng(size, absolutePath) {
-  const buffer = await renderPng(size);
+async function writePng(size, absolutePath, options = {}) {
+  const buffer = await renderPng(size, options);
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, buffer);
   const which = size >= COMPOSITE_MIN_SIZE ? "codemark" : "icon";
-  console.log(`✓ wrote ${absolutePath.replace(repoRoot + "/", "")} (${size}x${size}, ${which})`);
+  const bg = options.opaqueBackground ? ", gunmetal bg" : "";
+  console.log(
+    `✓ wrote ${absolutePath.replace(repoRoot + "/", "")} (${size}x${size}, ${which}${bg})`,
+  );
 }
 
 async function writeIco(sizes, absolutePath) {
@@ -87,10 +97,17 @@ await writeIco([16, 32, 48], resolve(publicDir, "favicon.ico"));
 const stages = ["dev", "nightly", "prod"];
 for (const stage of stages) {
   const stageDir = resolve(repoRoot, "assets", stage);
-  // 1024px desktop icons (dock, installer, etc.) use the composite.
-  await writePng(1024, resolve(stageDir, "cornerstone-macos-1024.png"));
-  await writePng(1024, resolve(stageDir, "cornerstone-universal-1024.png"));
-  await writePng(1024, resolve(stageDir, "cornerstone-ios-1024.png"));
+  // 1024px desktop icons (dock, installer, etc.) use the composite on an opaque
+  // Cornerstone Gunmetal plate so the white glyphs remain legible.
+  await writePng(1024, resolve(stageDir, "cornerstone-macos-1024.png"), {
+    opaqueBackground: true,
+  });
+  await writePng(1024, resolve(stageDir, "cornerstone-universal-1024.png"), {
+    opaqueBackground: true,
+  });
+  await writePng(1024, resolve(stageDir, "cornerstone-ios-1024.png"), {
+    opaqueBackground: true,
+  });
   // Small web favicons stay icon-only (text would be illegible).
   await writePng(16, resolve(stageDir, "cornerstone-web-favicon-16x16.png"));
   await writePng(32, resolve(stageDir, "cornerstone-web-favicon-32x32.png"));

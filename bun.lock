@@ -200,7 +200,7 @@
   },
   "catalog": {
     "@effect/atom-react": "4.0.0-beta.45",
-    "@effect/language-service": "0.84.2",
+    "@effect/language-service": "0.85.1",
     "@effect/platform-bun": "4.0.0-beta.45",
     "@effect/platform-node": "4.0.0-beta.45",
     "@effect/platform-node-shared": "4.0.0-beta.45",
@@ -296,7 +296,7 @@
 
     "@effect/atom-react": ["@effect/atom-react@4.0.0-beta.45", "", { "peerDependencies": { "effect": "^4.0.0-beta.45", "react": "^19.2.4", "scheduler": "*" } }, "sha512-jCoiae9UNeis9Yoal1p5V/P4eJK9nX89wORom7X5LpR2Ok920SZJc8dIeYkRXRAp9BCYJ/yWcO8gGLf7do71vg=="],
 
-    "@effect/language-service": ["@effect/language-service@0.84.2", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-l04qNxpiA8rY5yXWckRPJ7Mk5MNerXuNymSFf+IdflfI5i8jgL1bpBNLuP6ijg7wgjdHc/KmTnCj2kT0SCntuA=="],
+    "@effect/language-service": ["@effect/language-service@0.85.1", "", { "bin": { "effect-language-service": "cli.js" } }, "sha512-EXnJjIy6zQ3nUO/MZ+ynWUb8B895KZPotd1++oTs9JjDkplwM7cb6zo8Zq2zU6piwq+KflO7amXbEfj1UMpHkw=="],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-beta.45", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-beta.45" }, "peerDependencies": { "effect": "^4.0.0-beta.45" } }, "sha512-dZsbkJ+o4JfKE1OIAlMq8YWhmEfXxtTYennYADK/M/XlOtkFLsc2jkZppDvMznVni6JpFxWc7wd5rUf8jBVP5g=="],
 

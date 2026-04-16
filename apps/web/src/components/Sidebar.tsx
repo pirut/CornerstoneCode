@@ -2000,8 +2000,31 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron: boolean;
 }) {
   if (isElectron) {
+    // Pad left past the macOS traffic lights (~72px). On Windows/Linux the
+    // Window Controls Overlay sits on the right over the main pane, so the
+    // sidebar can reclaim that space via `wco:pl-3`.
     return (
-      <SidebarHeader className="drag-region h-[52px] px-0 py-0 wco:h-[env(titlebar-area-height)]" />
+      <SidebarHeader className="drag-region @container/brand h-[52px] px-0 py-0 wco:h-[env(titlebar-area-height)]">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Link
+                aria-label="Go to threads"
+                className="flex h-full min-w-0 items-center gap-2 pl-[82px] pr-3 text-foreground outline-hidden ring-ring transition-colors hover:text-foreground focus-visible:ring-2 wco:pl-3"
+                to="/"
+              >
+                <CornerstoneBrandMark />
+                <span className="block max-w-0 overflow-hidden whitespace-nowrap text-sm font-medium tracking-tight opacity-0 transition-[max-width,opacity] duration-200 ease-out @[176px]/brand:max-w-[10rem] @[176px]/brand:opacity-100">
+                  CornerstoneCode
+                </span>
+              </Link>
+            }
+          />
+          <TooltipPopup side="bottom" sideOffset={2}>
+            Version {APP_VERSION}
+          </TooltipPopup>
+        </Tooltip>
+      </SidebarHeader>
     );
   }
 

@@ -65,5 +65,5 @@ export interface AuthControlPlaneShape {
 }
 
 export class AuthControlPlane extends Context.Service<AuthControlPlane, AuthControlPlaneShape>()(
-  "t3/AuthControlPlane",
+  "t3/auth/Services/AuthControlPlane",
 ) {}
