@@ -28,6 +28,11 @@ permissions:
 jobs:
   preflight:
     name: Preflight
+    # Only the upstream org runs this workflow. Forks should use
+    # `.github/workflows/release-fork.yml` instead (it skips the
+    # npm `publish_cli` and GitHub-App `finalize` jobs that require
+    # upstream-only credentials).
+    if: github.repository_owner == 'pingdotgg'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -103,7 +108,7 @@ jobs:
             echo "release_channel=stable" >> "$GITHUB_OUTPUT"
             echo "version=$version" >> "$GITHUB_OUTPUT"
             echo "tag=v$version" >> "$GITHUB_OUTPUT"
-            echo "name=T3 Code v$version" >> "$GITHUB_OUTPUT"
+            echo "name=CornerstoneCode v$version" >> "$GITHUB_OUTPUT"
             echo "cli_dist_tag=latest" >> "$GITHUB_OUTPUT"
             if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "is_prerelease=false" >> "$GITHUB_OUTPUT"

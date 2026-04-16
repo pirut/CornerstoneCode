@@ -1329,6 +1329,50 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "thread.session-set": {
+          // When a session transitions into a terminal-dead state
+          // ("stopped" | "error" | "interrupted"), the provider is gone
+          // and will never accept a late response to an outstanding
+          // approval.  Any "pending" approval row for the thread must
+          // flip to "resolved" so the sidebar stops rendering a stale
+          // "Pending Approval" pill.  Without this sweep the row would
+          // sit pending forever, because the existing stale-failure
+          // handler only fires if the user *tries* to respond and the
+          // provider rejects it.
+          //
+          // We deliberately do NOT sweep on "ready" / "idle" /
+          // "starting" — those mean the provider is still alive and
+          // could potentially honor a late response.  Initial cleanup
+          // of historical orphaned rows is handled by the one-shot
+          // migration 025_SweepStalePendingApprovals.
+          const status = event.payload.session.status;
+          if (status !== "stopped" && status !== "error" && status !== "interrupted") {
+            return;
+          }
+          const existingApprovals = yield* projectionPendingApprovalRepository.listByThreadId({
+            threadId: event.payload.threadId,
+          });
+          const stalePending = existingApprovals.filter(
+            (approval) => approval.status === "pending",
+          );
+          if (stalePending.length === 0) {
+            return;
+          }
+          const resolvedAt = event.payload.session.updatedAt;
+          yield* Effect.forEach(
+            stalePending,
+            (approval) =>
+              projectionPendingApprovalRepository.upsert({
+                ...approval,
+                status: "resolved",
+                decision: null,
+                resolvedAt,
+              }),
+            { concurrency: 1 },
+          ).pipe(Effect.asVoid);
+          return;
+        }
+
         default:
           return;
       }

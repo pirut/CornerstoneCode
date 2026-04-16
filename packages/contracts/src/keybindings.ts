@@ -27,6 +27,33 @@ export const THREAD_KEYBINDING_COMMANDS = [
 ] as const;
 export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number];
 
+export const WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS = [
+  "workspace.moveToTab.1",
+  "workspace.moveToTab.2",
+  "workspace.moveToTab.3",
+  "workspace.moveToTab.4",
+  "workspace.moveToTab.5",
+  "workspace.moveToTab.6",
+  "workspace.moveToTab.7",
+  "workspace.moveToTab.8",
+  "workspace.moveToTab.9",
+] as const;
+export type WorkspaceTabJumpKeybindingCommand =
+  (typeof WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS)[number];
+
+export const WORKSPACE_KEYBINDING_COMMANDS = [
+  "workspace.splitRight",
+  "workspace.closePane",
+  "workspace.focusLeft",
+  "workspace.focusRight",
+  "workspace.newTab",
+  "workspace.closeTab",
+  "workspace.nextTab",
+  "workspace.previousTab",
+  ...WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS,
+] as const;
+export type WorkspaceKeybindingCommand = (typeof WORKSPACE_KEYBINDING_COMMANDS)[number];
+
 const STATIC_KEYBINDING_COMMANDS = [
   "terminal.toggle",
   "terminal.split",
@@ -38,6 +65,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "chat.newLocal",
   "editor.openFavorite",
   ...THREAD_KEYBINDING_COMMANDS,
+  ...WORKSPACE_KEYBINDING_COMMANDS,
 ] as const;
 
 export const SCRIPT_RUN_COMMAND_PATTERN = Schema.TemplateLiteral([

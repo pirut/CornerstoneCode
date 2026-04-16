@@ -8,9 +8,10 @@ import {
   startNewThreadFromContext,
 } from "../lib/chatThreadActions";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { resolveShortcutCommand } from "../keybindings";
+import { resolveShortcutCommand, workspaceTabJumpIndexFromCommand } from "../keybindings";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
+import { useWorkspaceLayoutStore } from "../workspaceLayoutStore";
 import { resolveSidebarNewThreadEnvMode } from "~/components/Sidebar.logic";
 import { useSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "~/rpc/serverState";
@@ -75,6 +76,62 @@ function ChatRouteGlobalShortcuts() {
           }),
           handleNewThread,
         });
+        return;
+      }
+
+      if (command && command.startsWith("workspace.")) {
+        const workspaceStore = useWorkspaceLayoutStore.getState();
+        switch (command) {
+          case "workspace.splitRight": {
+            const focused = workspaceStore.tabs.find(
+              (tab) => tab.id === workspaceStore.activeTabId,
+            );
+            if (!focused) break;
+            workspaceStore.splitPane(
+              focused.focusedPaneId,
+              { kind: "empty" },
+              "horizontal",
+              "after",
+            );
+            event.preventDefault();
+            break;
+          }
+          case "workspace.closePane":
+            workspaceStore.closeFocusedPane();
+            event.preventDefault();
+            break;
+          case "workspace.focusLeft":
+            workspaceStore.focusInDirection("left");
+            event.preventDefault();
+            break;
+          case "workspace.focusRight":
+            workspaceStore.focusInDirection("right");
+            event.preventDefault();
+            break;
+          case "workspace.newTab":
+            workspaceStore.newTab();
+            event.preventDefault();
+            break;
+          case "workspace.closeTab":
+            workspaceStore.closeActiveTab();
+            event.preventDefault();
+            break;
+          case "workspace.nextTab":
+            workspaceStore.focusNextTab();
+            event.preventDefault();
+            break;
+          case "workspace.previousTab":
+            workspaceStore.focusPreviousTab();
+            event.preventDefault();
+            break;
+          default: {
+            const tabIndex = workspaceTabJumpIndexFromCommand(command);
+            if (tabIndex !== null) {
+              workspaceStore.focusTabByIndex(tabIndex);
+              event.preventDefault();
+            }
+          }
+        }
       }
     };
 

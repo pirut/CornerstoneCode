@@ -1828,6 +1828,443 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
+  it.effect(
+    "resolves pending approvals when a thread's session transitions to a terminal-dead state",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+          eventStore
+            .append(event)
+            .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+        yield* appendAndProject({
+          type: "project.created",
+          eventId: EventId.make("evt-session-stale-1"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-session-stale"),
+          occurredAt: "2026-04-15T12:00:00.000Z",
+          commandId: CommandId.make("cmd-session-stale-1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-stale-1"),
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-session-stale"),
+            title: "Project Session Stale",
+            workspaceRoot: "/tmp/project-session-stale",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: "2026-04-15T12:00:00.000Z",
+            updatedAt: "2026-04-15T12:00:00.000Z",
+          },
+        });
+
+        yield* appendAndProject({
+          type: "thread.created",
+          eventId: EventId.make("evt-session-stale-2"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-session-stale"),
+          occurredAt: "2026-04-15T12:00:01.000Z",
+          commandId: CommandId.make("cmd-session-stale-2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-stale-2"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-session-stale"),
+            projectId: ProjectId.make("project-session-stale"),
+            title: "Thread Session Stale",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-04-15T12:00:01.000Z",
+            updatedAt: "2026-04-15T12:00:01.000Z",
+          },
+        });
+
+        // Seed a pending approval for the thread — mirrors the shape the
+        // activity projector writes on a real approval.requested event.
+        yield* appendAndProject({
+          type: "thread.activity-appended",
+          eventId: EventId.make("evt-session-stale-3"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-session-stale"),
+          occurredAt: "2026-04-15T12:00:02.000Z",
+          commandId: CommandId.make("cmd-session-stale-3"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-stale-3"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-session-stale"),
+            activity: {
+              id: EventId.make("activity-session-stale-approval-requested"),
+              tone: "approval",
+              kind: "approval.requested",
+              summary: "Command approval requested",
+              payload: {
+                requestId: "approval-request-session-stale",
+                requestKind: "command",
+              },
+              turnId: null,
+              createdAt: "2026-04-15T12:00:02.000Z",
+            },
+          },
+        });
+
+        // Sanity check: before the session transition the approval is pending
+        // and the thread's pending_approval_count reflects it.
+        const beforeApprovalRows = yield* sql<{
+          readonly status: string;
+          readonly resolvedAt: string | null;
+        }>`
+          SELECT status, resolved_at AS "resolvedAt"
+          FROM projection_pending_approvals
+          WHERE request_id = 'approval-request-session-stale'
+        `;
+        assert.deepEqual(beforeApprovalRows, [{ status: "pending", resolvedAt: null }]);
+        const beforeThreadRows = yield* sql<{
+          readonly pendingApprovalCount: number;
+        }>`
+          SELECT pending_approval_count AS "pendingApprovalCount"
+          FROM projection_threads
+          WHERE thread_id = 'thread-session-stale'
+        `;
+        assert.deepEqual(beforeThreadRows, [{ pendingApprovalCount: 1 }]);
+
+        // Session transitions to 'stopped' — the provider is no longer
+        // listening for the approval response, so the pending row must flip
+        // to 'resolved' and the thread's count must drop to 0.
+        yield* appendAndProject({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-session-stale-4"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-session-stale"),
+          occurredAt: "2026-04-15T12:00:03.000Z",
+          commandId: CommandId.make("cmd-session-stale-4"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-stale-4"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-session-stale"),
+            session: {
+              threadId: ThreadId.make("thread-session-stale"),
+              status: "stopped",
+              providerName: "codex",
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-04-15T12:00:03.000Z",
+            },
+          },
+        });
+
+        const approvalRows = yield* sql<{
+          readonly status: string;
+          readonly decision: string | null;
+          readonly resolvedAt: string | null;
+        }>`
+          SELECT
+            status,
+            decision,
+            resolved_at AS "resolvedAt"
+          FROM projection_pending_approvals
+          WHERE request_id = 'approval-request-session-stale'
+        `;
+        assert.deepEqual(approvalRows, [
+          {
+            status: "resolved",
+            decision: null,
+            resolvedAt: "2026-04-15T12:00:03.000Z",
+          },
+        ]);
+
+        const threadRows = yield* sql<{
+          readonly pendingApprovalCount: number;
+        }>`
+          SELECT pending_approval_count AS "pendingApprovalCount"
+          FROM projection_threads
+          WHERE thread_id = 'thread-session-stale'
+        `;
+        assert.deepEqual(threadRows, [{ pendingApprovalCount: 0 }]);
+      }),
+  );
+
+  it.effect("leaves pending approvals untouched when a session transitions to running", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-session-running-1"),
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-session-running"),
+        occurredAt: "2026-04-15T13:00:00.000Z",
+        commandId: CommandId.make("cmd-session-running-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-session-running-1"),
+        metadata: {},
+        payload: {
+          projectId: ProjectId.make("project-session-running"),
+          title: "Project Session Running",
+          workspaceRoot: "/tmp/project-session-running",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-04-15T13:00:00.000Z",
+          updatedAt: "2026-04-15T13:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-session-running-2"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-session-running"),
+        occurredAt: "2026-04-15T13:00:01.000Z",
+        commandId: CommandId.make("cmd-session-running-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-session-running-2"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-session-running"),
+          projectId: ProjectId.make("project-session-running"),
+          title: "Thread Session Running",
+          modelSelection: {
+            provider: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-04-15T13:00:01.000Z",
+          updatedAt: "2026-04-15T13:00:01.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-session-running-3"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-session-running"),
+        occurredAt: "2026-04-15T13:00:02.000Z",
+        commandId: CommandId.make("cmd-session-running-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-session-running-3"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-session-running"),
+          activity: {
+            id: EventId.make("activity-session-running-approval-requested"),
+            tone: "approval",
+            kind: "approval.requested",
+            summary: "Command approval requested",
+            payload: {
+              requestId: "approval-request-session-running",
+              requestKind: "command",
+            },
+            turnId: null,
+            createdAt: "2026-04-15T13:00:02.000Z",
+          },
+        },
+      });
+
+      // Session transitions to 'running' — the provider is still actively
+      // listening, so pending approvals must NOT be swept.
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-session-running-4"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-session-running"),
+        occurredAt: "2026-04-15T13:00:03.000Z",
+        commandId: CommandId.make("cmd-session-running-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-session-running-4"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-session-running"),
+          session: {
+            threadId: ThreadId.make("thread-session-running"),
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-04-15T13:00:03.000Z",
+          },
+        },
+      });
+
+      const approvalRows = yield* sql<{
+        readonly status: string;
+        readonly resolvedAt: string | null;
+      }>`
+        SELECT status, resolved_at AS "resolvedAt"
+        FROM projection_pending_approvals
+        WHERE request_id = 'approval-request-session-running'
+      `;
+      assert.deepEqual(approvalRows, [{ status: "pending", resolvedAt: null }]);
+
+      const threadRows = yield* sql<{
+        readonly pendingApprovalCount: number;
+      }>`
+        SELECT pending_approval_count AS "pendingApprovalCount"
+        FROM projection_threads
+        WHERE thread_id = 'thread-session-running'
+      `;
+      assert.deepEqual(threadRows, [{ pendingApprovalCount: 1 }]);
+    }),
+  );
+
+  it.effect(
+    "leaves pending approvals untouched when a session transitions to 'ready' after a turn completes",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+          eventStore
+            .append(event)
+            .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+        yield* appendAndProject({
+          type: "project.created",
+          eventId: EventId.make("evt-session-ready-1"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-session-ready"),
+          occurredAt: "2026-04-15T14:00:00.000Z",
+          commandId: CommandId.make("cmd-session-ready-1"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-ready-1"),
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-session-ready"),
+            title: "Project Session Ready",
+            workspaceRoot: "/tmp/project-session-ready",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: "2026-04-15T14:00:00.000Z",
+            updatedAt: "2026-04-15T14:00:00.000Z",
+          },
+        });
+
+        yield* appendAndProject({
+          type: "thread.created",
+          eventId: EventId.make("evt-session-ready-2"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-session-ready"),
+          occurredAt: "2026-04-15T14:00:01.000Z",
+          commandId: CommandId.make("cmd-session-ready-2"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-ready-2"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-session-ready"),
+            projectId: ProjectId.make("project-session-ready"),
+            title: "Thread Session Ready",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-04-15T14:00:01.000Z",
+            updatedAt: "2026-04-15T14:00:01.000Z",
+          },
+        });
+
+        yield* appendAndProject({
+          type: "thread.activity-appended",
+          eventId: EventId.make("evt-session-ready-3"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-session-ready"),
+          occurredAt: "2026-04-15T14:00:02.000Z",
+          commandId: CommandId.make("cmd-session-ready-3"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-ready-3"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-session-ready"),
+            activity: {
+              id: EventId.make("activity-session-ready-approval-requested"),
+              tone: "approval",
+              kind: "approval.requested",
+              summary: "Command approval requested",
+              payload: {
+                requestId: "approval-request-session-ready",
+                requestKind: "command",
+              },
+              turnId: null,
+              createdAt: "2026-04-15T14:00:02.000Z",
+            },
+          },
+        });
+
+        // Session transitions to 'ready' — a normal post-turn lifecycle
+        // state; the provider is still alive and could still honor a late
+        // approval response.  The sweep must NOT fire, or else the sidebar
+        // would briefly flicker a "resolved" pill between turn.completed
+        // and the user's response, and the integration test covering the
+        // "late response to completed turn" flow would break.
+        yield* appendAndProject({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-session-ready-4"),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-session-ready"),
+          occurredAt: "2026-04-15T14:00:03.000Z",
+          commandId: CommandId.make("cmd-session-ready-4"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-session-ready-4"),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-session-ready"),
+            session: {
+              threadId: ThreadId.make("thread-session-ready"),
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-04-15T14:00:03.000Z",
+            },
+          },
+        });
+
+        const approvalRows = yield* sql<{
+          readonly status: string;
+          readonly resolvedAt: string | null;
+        }>`
+          SELECT status, resolved_at AS "resolvedAt"
+          FROM projection_pending_approvals
+          WHERE request_id = 'approval-request-session-ready'
+        `;
+        assert.deepEqual(approvalRows, [{ status: "pending", resolvedAt: null }]);
+
+        const threadRows = yield* sql<{
+          readonly pendingApprovalCount: number;
+        }>`
+          SELECT pending_approval_count AS "pendingApprovalCount"
+          FROM projection_threads
+          WHERE thread_id = 'thread-session-ready'
+        `;
+        assert.deepEqual(threadRows, [{ pendingApprovalCount: 1 }]);
+      }),
+  );
+
   it.effect("does not fallback-retain messages whose turnId is removed by revert", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;

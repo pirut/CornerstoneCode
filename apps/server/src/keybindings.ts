@@ -17,6 +17,7 @@ import {
   ResolvedKeybindingRule,
   ResolvedKeybindingsConfig,
   THREAD_JUMP_KEYBINDING_COMMANDS,
+  WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS,
   type ServerConfigIssue,
 } from "@t3tools/contracts";
 import { Mutable } from "effect/Types";
@@ -70,6 +71,24 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+]", command: "thread.next" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
+    command,
+  })),
+  // Workspace layout (horizontal split panes + tab groups).
+  // Vertical (stacked) splits are intentionally not exposed — horizontal
+  // columns are the only IDE-style split the UI supports today.
+  { key: "mod+\\", command: "workspace.splitRight" },
+  { key: "mod+shift+w", command: "workspace.closePane" },
+  { key: "mod+alt+left", command: "workspace.focusLeft" },
+  { key: "mod+alt+right", command: "workspace.focusRight" },
+  { key: "mod+t", command: "workspace.newTab" },
+  { key: "mod+alt+t", command: "workspace.closeTab" },
+  { key: "mod+alt+]", command: "workspace.nextTab" },
+  { key: "mod+alt+[", command: "workspace.previousTab" },
+  // Option+N (Alt+N) switches directly to the Nth workspace tab, matching
+  // common browser/terminal conventions. The user explicitly requested this
+  // binding without also holding Cmd.
+  ...WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
+    key: `alt+${index + 1}`,
     command,
   })),
 ];

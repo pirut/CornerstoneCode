@@ -799,7 +799,7 @@ function handleFatalStartupError(stage: string, error: unknown): void {
   console.error(`[desktop] fatal startup error (${stage})`, error);
   if (!isQuitting) {
     isQuitting = true;
-    dialog.showErrorBox("T3 Code failed to start", `Stage: ${stage}\n${message}${detail}`);
+    dialog.showErrorBox("CornerstoneCode failed to start", `Stage: ${stage}\n${message}${detail}`);
   }
   stopBackend();
   restoreStdIoCapture?.();
@@ -904,7 +904,7 @@ async function checkForUpdatesFromMenu(): Promise<void> {
     void dialog.showMessageBox({
       type: "info",
       title: "You're up to date!",
-      message: `T3 Code ${updateState.currentVersion} is currently the newest version available.`,
+      message: `CornerstoneCode ${updateState.currentVersion} is currently the newest version available.`,
       buttons: ["OK"],
     });
   } else if (updateState.status === "error") {
@@ -1019,7 +1019,7 @@ function resolveIconPath(ext: "ico" | "icns" | "png"): string | null {
       ROOT_DIR,
       "assets",
       "dev",
-      "blueprint-macos-1024.png",
+      "cornerstone-macos-1024.png",
     );
     if (FS.existsSync(developmentDockIconPath)) {
       return developmentDockIconPath;

@@ -1,7 +1,6 @@
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
-import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
 import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
 import {
@@ -10,6 +9,7 @@ import {
   DiffPanelShell,
   type DiffPanelMode,
 } from "../components/DiffPanelShell";
+import { WorkspaceShell } from "../components/WorkspaceShell";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
@@ -20,8 +20,9 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
+import type { PaneTarget } from "../workspaceLayoutTree";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
-import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { Sidebar, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -261,42 +262,73 @@ function ChatThreadRouteView() {
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
 
+  const urlTarget: PaneTarget = useMemo(
+    () => ({
+      kind: "server",
+      environmentId: threadRef.environmentId,
+      threadId: threadRef.threadId,
+    }),
+    [threadRef.environmentId, threadRef.threadId],
+  );
+
+  const onFocusedTargetChange = useCallback(
+    (target: PaneTarget) => {
+      if (target.kind === "server") {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+          replace: true,
+        });
+        return;
+      }
+      if (target.kind === "draft") {
+        void navigate({
+          to: "/draft/$draftId",
+          params: { draftId: target.draftId },
+          replace: true,
+        });
+      }
+    },
+    [navigate],
+  );
+
   if (!shouldUseDiffSheet) {
     return (
-      <>
-        <SidebarInset className="h-dvh  min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-          <ChatView
-            environmentId={threadRef.environmentId}
-            threadId={threadRef.threadId}
-            onDiffPanelOpen={markDiffOpened}
-            reserveTitleBarControlInset={!diffOpen}
-            routeKind="server"
+      <WorkspaceShell
+        urlTarget={urlTarget}
+        onFocusedTargetChange={onFocusedTargetChange}
+        focusedPaneProps={{
+          onDiffPanelOpen: markDiffOpened,
+          reserveTitleBarControlInset: !diffOpen,
+        }}
+        sideContent={
+          <DiffPanelInlineSidebar
+            diffOpen={diffOpen}
+            onCloseDiff={closeDiff}
+            onOpenDiff={openDiff}
+            renderDiffContent={shouldRenderDiffContent}
           />
-        </SidebarInset>
-        <DiffPanelInlineSidebar
-          diffOpen={diffOpen}
-          onCloseDiff={closeDiff}
-          onOpenDiff={openDiff}
-          renderDiffContent={shouldRenderDiffContent}
-        />
-      </>
+        }
+      />
     );
   }
 
   return (
-    <>
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-        <ChatView
-          environmentId={threadRef.environmentId}
-          threadId={threadRef.threadId}
-          onDiffPanelOpen={markDiffOpened}
-          routeKind="server"
-        />
-      </SidebarInset>
-      <DiffPanelSheet diffOpen={diffOpen} onCloseDiff={closeDiff}>
-        {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
-      </DiffPanelSheet>
-    </>
+    <WorkspaceShell
+      urlTarget={urlTarget}
+      onFocusedTargetChange={onFocusedTargetChange}
+      focusedPaneProps={{
+        onDiffPanelOpen: markDiffOpened,
+      }}
+      sideContent={
+        <DiffPanelSheet diffOpen={diffOpen} onCloseDiff={closeDiff}>
+          {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
+        </DiffPanelSheet>
+      }
+    />
   );
 }
 

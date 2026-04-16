@@ -13,12 +13,17 @@ import {
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowUpIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Columns2Icon,
   CornerLeftUpIcon,
   FolderIcon,
   FolderPlusIcon,
   MessageSquareIcon,
+  PlusIcon,
   SettingsIcon,
   SquarePenIcon,
+  XIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -70,6 +75,7 @@ import {
 } from "../store";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { useWorkspaceLayoutStore } from "../workspaceLayoutStore";
 import {
   ADDON_ICON_CLASS,
   buildBrowseGroups,
@@ -667,6 +673,81 @@ function OpenCommandPaletteDialog() {
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-split-right",
+    searchTerms: ["split", "right", "pane", "workspace", "column", "side by side"],
+    title: "Split focused pane right",
+    icon: <Columns2Icon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "workspace.splitRight",
+    run: async () => {
+      const store = useWorkspaceLayoutStore.getState();
+      const activeTab = store.tabs.find((tab) => tab.id === store.activeTabId);
+      if (!activeTab) return;
+      store.splitPane(activeTab.focusedPaneId, { kind: "empty" }, "horizontal", "after");
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-close-pane",
+    searchTerms: ["close", "pane", "workspace", "remove"],
+    title: "Close focused pane",
+    icon: <XIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "workspace.closePane",
+    run: async () => {
+      useWorkspaceLayoutStore.getState().closeFocusedPane();
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-new-tab",
+    searchTerms: ["new tab", "workspace", "tab", "create", "open"],
+    title: "New workspace tab",
+    icon: <PlusIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "workspace.newTab",
+    run: async () => {
+      useWorkspaceLayoutStore.getState().newTab();
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-close-tab",
+    searchTerms: ["close tab", "workspace", "tab", "remove"],
+    title: "Close workspace tab",
+    icon: <XIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "workspace.closeTab",
+    run: async () => {
+      useWorkspaceLayoutStore.getState().closeActiveTab();
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-next-tab",
+    searchTerms: ["next tab", "workspace", "tab", "cycle", "switch"],
+    title: "Next workspace tab",
+    icon: <ChevronRightIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "workspace.nextTab",
+    run: async () => {
+      useWorkspaceLayoutStore.getState().focusNextTab();
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-previous-tab",
+    searchTerms: ["previous tab", "workspace", "tab", "cycle", "switch"],
+    title: "Previous workspace tab",
+    icon: <ChevronLeftIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "workspace.previousTab",
+    run: async () => {
+      useWorkspaceLayoutStore.getState().focusPreviousTab();
+    },
+  });
 
   if (addProjectEnvironmentOptions.length > 1) {
     actionItems.push({

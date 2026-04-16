@@ -1,12 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
-import ChatView from "../components/ChatView";
+import { useCallback, useEffect, useMemo } from "react";
 import { threadHasStarted } from "../components/ChatView.logic";
+import { WorkspaceShell } from "../components/WorkspaceShell";
 import { useComposerDraftStore, DraftId } from "../composerDraftStore";
-import { SidebarInset } from "../components/ui/sidebar";
 import { createThreadSelectorAcrossEnvironments } from "../storeSelectors";
 import { useStore } from "../store";
 import { buildThreadRouteParams } from "../threadRoutes";
+import type { PaneTarget } from "../workspaceLayoutTree";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
@@ -53,32 +53,49 @@ function DraftChatThreadRouteView() {
     void navigate({ to: "/", replace: true });
   }, [canonicalThreadRef, draftSession, navigate]);
 
-  if (canonicalThreadRef) {
-    return (
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-        <ChatView
-          environmentId={canonicalThreadRef.environmentId}
-          threadId={canonicalThreadRef.threadId}
-          routeKind="server"
-        />
-      </SidebarInset>
-    );
-  }
+  const urlTarget: PaneTarget | null = useMemo(() => {
+    if (canonicalThreadRef) {
+      return {
+        kind: "server",
+        environmentId: canonicalThreadRef.environmentId,
+        threadId: canonicalThreadRef.threadId,
+      };
+    }
+    if (draftSession) {
+      return { kind: "draft", draftId };
+    }
+    return null;
+  }, [canonicalThreadRef, draftId, draftSession]);
 
-  if (!draftSession) {
+  const onFocusedTargetChange = useCallback(
+    (target: PaneTarget) => {
+      if (target.kind === "server") {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+          replace: true,
+        });
+        return;
+      }
+      if (target.kind === "draft") {
+        void navigate({
+          to: "/draft/$draftId",
+          params: { draftId: target.draftId },
+          replace: true,
+        });
+      }
+    },
+    [navigate],
+  );
+
+  if (!draftSession && !canonicalThreadRef) {
     return null;
   }
 
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <ChatView
-        draftId={draftId}
-        environmentId={draftSession.environmentId}
-        threadId={draftSession.threadId}
-        routeKind="draft"
-      />
-    </SidebarInset>
-  );
+  return <WorkspaceShell urlTarget={urlTarget} onFocusedTargetChange={onFocusedTargetChange} />;
 }
 
 export const Route = createFileRoute("/_chat/draft/$draftId")({

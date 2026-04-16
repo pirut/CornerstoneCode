@@ -5,6 +5,8 @@ import {
   type ResolvedKeybindingsConfig,
   THREAD_JUMP_KEYBINDING_COMMANDS,
   type ThreadJumpKeybindingCommand,
+  WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS,
+  type WorkspaceTabJumpKeybindingCommand,
 } from "@t3tools/contracts";
 import { isMacPlatform } from "./lib/utils";
 
@@ -345,6 +347,43 @@ export function isOpenFavoriteEditorShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return matchesCommandShortcut(event, keybindings, "editor.openFavorite", options);
+}
+
+export type WorkspaceKeybindingCommandType =
+  | "workspace.splitRight"
+  | "workspace.closePane"
+  | "workspace.focusLeft"
+  | "workspace.focusRight"
+  | "workspace.newTab"
+  | "workspace.closeTab"
+  | "workspace.nextTab"
+  | "workspace.previousTab"
+  | WorkspaceTabJumpKeybindingCommand;
+
+export function workspaceTabJumpCommandForIndex(
+  index: number,
+): WorkspaceTabJumpKeybindingCommand | null {
+  return WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS[index] ?? null;
+}
+
+export function workspaceTabJumpIndexFromCommand(command: string): number | null {
+  const index = WORKSPACE_TAB_JUMP_KEYBINDING_COMMANDS.indexOf(
+    command as WorkspaceTabJumpKeybindingCommand,
+  );
+  return index === -1 ? null : index;
+}
+
+export function resolveWorkspaceShortcutCommand(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): WorkspaceKeybindingCommandType | null {
+  const command = resolveShortcutCommand(event, keybindings, options);
+  if (!command) return null;
+  if (command.startsWith("workspace.")) {
+    return command as WorkspaceKeybindingCommandType;
+  }
+  return null;
 }
 
 export function isTerminalClearShortcut(

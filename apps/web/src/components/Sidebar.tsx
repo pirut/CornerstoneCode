@@ -119,6 +119,7 @@ import {
   SidebarTrigger,
 } from "./ui/sidebar";
 import { useThreadSelectionStore } from "../threadSelectionStore";
+import { useWorkspaceLayoutStore } from "../workspaceLayoutStore";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
   getSidebarThreadIdsToPrewarm,
@@ -1420,8 +1421,37 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const isMac = isMacPlatform(navigator.platform);
       const isModClick = isMac ? event.metaKey : event.ctrlKey;
       const isShiftClick = event.shiftKey;
+      const isAltClick = event.altKey;
+      const isMiddleClick = event.button === 1;
       const threadKey = scopedThreadKey(threadRef);
       const currentSelectionCount = useThreadSelectionStore.getState().selectedThreadKeys.size;
+
+      // Workspace split/tab modifiers (Alt-based to avoid clashing with
+      // Cmd-click multi-select and Shift-click range-select).
+      if (isMiddleClick) {
+        event.preventDefault();
+        const target = {
+          kind: "server" as const,
+          environmentId: threadRef.environmentId,
+          threadId: threadRef.threadId,
+        };
+        useWorkspaceLayoutStore.getState().newTab(target);
+        return;
+      }
+
+      if (isAltClick && !isModClick) {
+        event.preventDefault();
+        useWorkspaceLayoutStore.getState().splitFocusedPane(
+          {
+            kind: "server",
+            environmentId: threadRef.environmentId,
+            threadId: threadRef.threadId,
+          },
+          "horizontal",
+          "after",
+        );
+        return;
+      }
 
       if (isModClick) {
         event.preventDefault();
@@ -1829,18 +1859,28 @@ const SidebarProjectListRow = memo(function SidebarProjectListRow(props: Sidebar
   );
 });
 
-function T3Wordmark() {
+function CornerstoneBrandMark() {
+  // The icon already contains the gold corner square (Cornerstone primary
+  // accent) baked in; the two black polygons use `currentColor` so they
+  // inherit the surrounding text color (Limestone/white on dark, near-black
+  // on light).
   return (
     <svg
-      aria-label="T3"
-      className="h-2.5 w-auto shrink-0 text-foreground"
-      viewBox="15.5309 37 94.3941 56.96"
+      aria-label="Cornerstone"
+      role="img"
+      className="h-4 w-4 shrink-0 text-foreground"
+      viewBox="0 0 1080 1080"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path
-        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"
+      <polygon
         fill="currentColor"
+        points="416.17 662.19 673.36 919.38 773.2 919.38 841 919.38 930.54 919.38 930.54 662.19 416.17 662.19"
       />
+      <polygon
+        fill="currentColor"
+        points="158.98 147.82 158.98 405.01 416.17 662.19 416.17 405.01 930.54 405.01 930.54 147.82 158.98 147.82"
+      />
+      <rect fill="#d1a35a" x="149.46" y="662.19" width="266.71" height="266.71" />
     </svg>
   );
 }
@@ -1967,12 +2007,12 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
           render={
             <Link
               aria-label="Go to threads"
-              className="ml-1 flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md outline-hidden ring-ring transition-colors hover:text-foreground focus-visible:ring-2"
+              className="ml-1 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md outline-hidden ring-ring transition-colors hover:text-foreground focus-visible:ring-2"
               to="/"
             >
-              <T3Wordmark />
-              <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
-                Code
+              <CornerstoneBrandMark />
+              <span className="truncate text-sm font-medium tracking-tight text-foreground">
+                CornerstoneCode
               </span>
               <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
                 {APP_STAGE_LABEL}
